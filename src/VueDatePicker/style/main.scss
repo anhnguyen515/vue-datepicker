@@ -13,8 +13,6 @@
   --dp-menu-appear-transition-timing: cubic-bezier(.4, 0, 1, 1);
   --dp-transition-timing: ease-out;
   --dp-action-row-transtion: all 0.2s ease-in;
-  --dp-font-family: -apple-system, blinkmacsystemfont, "Segoe UI", roboto, oxygen, ubuntu, cantarell, "Open Sans",
-  "Helvetica Neue", sans-serif;
   --dp-border-radius: 4px;
   --dp-cell-border-radius: 4px;
   --dp-transition-length: 22px;
@@ -104,7 +102,6 @@
 }
 
 .dp__main {
-  font-family: var(--dp-font-family);
   user-select: none;
   box-sizing: border-box;
   position: relative;
