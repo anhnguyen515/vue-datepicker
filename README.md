@@ -21,6 +21,7 @@
 - Time picker
 - Month picker
 - Year picker
+- Quarter picker
 - Week picker
 - Multiple dates select
 - Multiple calendars
@@ -87,6 +88,10 @@ Special thanks to our sponsors 🙏
 <a href="https://hapio.io/" target="_blank">
     <img src="https://avatars.githubusercontent.com/u/99868704?s=200&v=4" width="80" alt="Hapio">
 </a>
+
+## Versioning
+
+This project follows [SemVer](https://semver.org) specification
 
 ## License
 

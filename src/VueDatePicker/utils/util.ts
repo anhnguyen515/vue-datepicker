@@ -1,6 +1,7 @@
 import { unref } from 'vue';
+import { format } from 'date-fns';
 
-import type { IDefaultSelect, IMarker, MaybeElementRef, ModelValue } from '@/interfaces';
+import type { Config, IDefaultSelect, IMarker, MaybeElementRef, ModelValue, OverlayGridItem } from '@/interfaces';
 import type { ComponentPublicInstance } from 'vue';
 
 export const getArrayInArray = <T>(list: T[], increment = 3): T[][] => {
@@ -12,16 +13,38 @@ export const getArrayInArray = <T>(list: T[], increment = 3): T[][] => {
     return items;
 };
 
-/**
- * Generate week day names based on locale and in order specified in week start
- */
-export const getDayNames = (locale: string, weekStart: number): string[] => {
-    // Get list in order from sun ... sat
-    const days = [1, 2, 3, 4, 5, 6, 7].map((day) => {
+function dayNameIntlMapper(locale: string) {
+    return (day: number) => {
         return new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' })
             .format(new Date(`2017-01-0${day}T00:00:00+00:00`))
             .slice(0, 2);
-    });
+    };
+}
+
+function dayNameDateFnsMapper(formatLocale: Locale) {
+    return (day: number) => {
+        return format(new Date(`2017-01-0${day}T00:00:00+00:00`), 'EEEEEE', { locale: formatLocale });
+    };
+}
+
+/**
+ * Generate week day names based on formatLocale or locale and in order specified in week start
+ */
+export const getDayNames = (formatLocale: Locale | null, locale: string, weekStart: number): string[] => {
+    // Get list in order from sun ... sat
+    const daysArray = [1, 2, 3, 4, 5, 6, 7];
+    let days;
+
+    // Map day order numbers to names
+    if (formatLocale !== null) {
+        try {
+            days = daysArray.map(dayNameDateFnsMapper(formatLocale));
+        } catch (e) {
+            days = daysArray.map(dayNameIntlMapper(locale));
+        }
+    } else {
+        days = daysArray.map(dayNameIntlMapper(locale));
+    }
 
     // Get days that are in order before specified week start
     const beforeWeekStart = days.slice(0, weekStart);
@@ -44,14 +67,34 @@ export const getYears = (yearRange: number[] | string[], reverse?: boolean): IDe
 };
 
 /**
- * Generate month names based on locale for selection display
+ * Generate month names based on formatLocale or locale for selection display
  */
-export const getMonths = (locale: string, format: 'long' | 'short'): IDefaultSelect[] => {
-    const formatter = new Intl.DateTimeFormat(locale, { month: format, timeZone: 'UTC' });
+export const getMonths = (
+    formatLocale: Locale | null,
+    locale: string,
+    monthFormat: 'long' | 'short',
+): IDefaultSelect[] => {
     const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((month) => {
         const mm = month < 10 ? `0${month}` : month;
         return new Date(`2017-${mm}-01T00:00:00+00:00`);
     });
+
+    if (formatLocale !== null) {
+        try {
+            const monthDateFnsFormat = monthFormat === 'long' ? 'MMMM' : 'MMM';
+            return months.map((date, i) => {
+                const month = format(date, monthDateFnsFormat, { locale: formatLocale });
+                return {
+                    text: month.charAt(0).toUpperCase() + month.substring(1),
+                    value: i,
+                };
+            });
+        } catch (e) {
+            // Do nothing. Go ahead to execute fallback
+        }
+    }
+
+    const formatter = new Intl.DateTimeFormat(locale, { month: monthFormat, timeZone: 'UTC' });
     return months.map((date, i) => {
         const month = formatter.format(date);
         return {
@@ -100,6 +143,10 @@ export const getNumVal = (num?: string | number | null): number | null => {
     return +num;
 };
 
+export const isNumNullish = (num?: number | null): num is null => {
+    return num === null;
+};
+
 export const findFocusableEl = (container: HTMLElement | null): HTMLElement | undefined => {
     if (container) {
         const elementsList = container.querySelectorAll('input, button, select, textarea, a[href]');
@@ -107,4 +154,81 @@ export const findFocusableEl = (container: HTMLElement | null): HTMLElement | un
         return elArr[0];
     }
     return undefined;
+};
+
+/**
+ * Create array for the SelectionOverlay grouped by 3
+ */
+export const getGroupedList = (items: IDefaultSelect[]): IDefaultSelect[][] => {
+    const list = [];
+    const setList = (listItems: IDefaultSelect[]) => {
+        return listItems.filter((item) => item);
+    };
+    for (let i = 0; i < items.length; i += 3) {
+        const listItems = [items[i], items[i + 1], items[i + 2]];
+        list.push(setList(listItems));
+    }
+    return list;
+};
+
+/**
+ * Check if number is between min and max values
+ */
+export const checkMinMaxValue = (value: number | string, min?: number, max?: number): boolean => {
+    const hasMax = max ?? max === 0;
+    const hasMin = min ?? min === 0;
+
+    if (!hasMax && !hasMin) return false;
+
+    const maxVal = +(max as number);
+    const minVal = +(min as number);
+
+    if (hasMax && hasMin) {
+        return +value > maxVal || +value < minVal;
+    }
+    if (hasMax) {
+        return +value > maxVal;
+    }
+
+    if (hasMin) {
+        return +value < minVal;
+    }
+
+    return false;
+};
+
+/**
+ * Maps data for the SelectionOverlay
+ */
+export const groupListAndMap = (
+    list: IDefaultSelect[],
+    cb: (item: IDefaultSelect) => { active: boolean; disabled: boolean; isBetween?: boolean },
+): OverlayGridItem[][] => {
+    return getGroupedList(list).map((items) => {
+        return items.map((item) => {
+            const { active, disabled, isBetween } = cb(item);
+            return {
+                ...item,
+                active,
+                disabled: disabled,
+                className: {
+                    dp__overlay_cell_active: active,
+                    dp__overlay_cell: !active,
+                    dp__overlay_cell_disabled: disabled,
+                    dp__overlay_cell_pad: true,
+                    dp__overlay_cell_active_disabled: disabled && active,
+                    dp__cell_in_between: isBetween,
+                },
+            };
+        });
+    });
+};
+
+export const checkStopPropagation = (ev: Event | undefined, config: Config, immediate = false) => {
+    if (ev && config.allowStopPropagation) {
+        if (immediate) {
+            ev.stopImmediatePropagation();
+        }
+        ev.stopPropagation();
+    }
 };

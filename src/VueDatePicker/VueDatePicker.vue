@@ -20,38 +20,47 @@
                 <slot :name="slot" v-bind="args" />
             </template>
         </DatepickerInput>
-        <component v-if="isOpen" :is="teleport ? TeleportCmp : 'div'" v-bind="menuWrapProps">
-            <DatepickerMenu
+        <transition :name="menuTransition(openOnTop)" :css="showTransition && !defaultedInline.enabled">
+            <component
+                ref="dpWrapMenuRef"
                 v-if="isOpen"
-                ref="dpMenuRef"
-                :class="theme"
-                :style="!inline ? menuStyle : undefined"
-                :open-on-top="openOnTop"
-                :arr-map-values="arrMapValues"
-                v-bind="$props"
-                v-model:internal-model-value="internalModelValue"
-                @close-picker="closeMenu"
-                @select-date="selectDate"
-                @auto-apply="autoApplyValue"
-                @time-update="timeUpdate"
-                @flow-step="$emit('flow-step', $event)"
-                @update-month-year="$emit('update-month-year', $event)"
-                @invalid-select="$emit('invalid-select', internalModelValue)"
-                @invalid-fixed-range="$emit('invalid-fixed-range', $event)"
-                @recalculate-position="setMenuPosition"
-                @tooltip-open="$emit('tooltip-open', $event)"
-                @tooltip-close="$emit('tooltip-close', $event)"
-                @time-picker-open="$emit('time-picker-open', $event)"
-                @time-picker-close="$emit('time-picker-close', $event)"
-                @am-pm-change="$emit('am-pm-change', $event)"
-                @range-start="$emit('range-start', $event)"
-                @range-end="$emit('range-end', $event)"
+                :is="teleport ? TeleportCmp : 'div'"
+                v-bind="menuWrapProps"
+                :class="{ 'dp--menu-wrapper': !defaultedInline.enabled }"
+                :style="!defaultedInline.enabled ? menuStyle : undefined"
             >
-                <template v-for="(slot, i) in slotList" #[slot]="args" :key="i">
-                    <slot :name="slot" v-bind="{ ...args }" />
-                </template>
-            </DatepickerMenu>
-        </component>
+                <DatepickerMenu
+                    ref="dpMenuRef"
+                    :class="{ [theme]: true, 'dp--menu-wrapper': teleport }"
+                    :style="teleport ? menuStyle : undefined"
+                    :open-on-top="openOnTop"
+                    :arr-map-values="arrMapValues"
+                    v-bind="$props"
+                    v-model:internal-model-value="internalModelValue"
+                    @close-picker="closeMenu"
+                    @select-date="selectDate"
+                    @auto-apply="autoApplyValue"
+                    @time-update="timeUpdate"
+                    @flow-step="$emit('flow-step', $event)"
+                    @update-month-year="$emit('update-month-year', $event)"
+                    @invalid-select="$emit('invalid-select', internalModelValue)"
+                    @auto-apply-invalid="$emit('invalid-select', $event)"
+                    @invalid-fixed-range="$emit('invalid-fixed-range', $event)"
+                    @recalculate-position="setMenuPosition"
+                    @tooltip-open="$emit('tooltip-open', $event)"
+                    @tooltip-close="$emit('tooltip-close', $event)"
+                    @time-picker-open="$emit('time-picker-open', $event)"
+                    @time-picker-close="$emit('time-picker-close', $event)"
+                    @am-pm-change="$emit('am-pm-change', $event)"
+                    @range-start="$emit('range-start', $event)"
+                    @range-end="$emit('range-end', $event)"
+                >
+                    <template v-for="(slot, i) in slotList" #[slot]="args" :key="i">
+                        <slot :name="slot" v-bind="{ ...args }" />
+                    </template>
+                </DatepickerMenu>
+            </component>
+        </transition>
     </div>
 </template>
 
@@ -66,7 +75,6 @@
         watch,
         Teleport as TeleportCmp,
         nextTick,
-        reactive,
     } from 'vue';
 
     import DatepickerInput from '@/components/DatepickerInput.vue';
@@ -78,7 +86,8 @@
         mapSlots,
         useArrowNavigation,
         useState,
-        useUtils,
+        useTransitions,
+        useValidation,
     } from '@/composables';
     import { onClickOutside } from '@/directives/clickOutside';
     import { AllProps } from '@/props';
@@ -91,11 +100,12 @@
         DatepickerInputRef,
         ModelValue,
         MenuView,
-        ArrMapValues,
     } from '@/interfaces';
+    import { useDefaults } from '@/composables/defaults';
 
     const emit = defineEmits([
         'update:model-value',
+        'update:model-timezone-value',
         'text-submit',
         'closed',
         'cleared',
@@ -116,6 +126,13 @@
         'range-start',
         'range-end',
     ]);
+
+    defineOptions({
+        compatConfig: {
+            MODE: 3,
+        },
+    });
+
     const props = defineProps({
         ...AllProps,
     });
@@ -123,37 +140,38 @@
     const isOpen = ref(false);
     const modelValueRef = toRef(props, 'modelValue');
     const timezoneRef = toRef(props, 'timezone');
+    const dpWrapMenuRef = ref<HTMLElement | null>(null);
     const dpMenuRef = ref<DatepickerMenuRef | null>(null);
     const inputRef = ref<DatepickerInputRef | null>(null);
     const isInputFocused = ref(false);
     const pickerWrapperRef = ref<HTMLElement | null>(null);
-    const arrMapValues = reactive<ArrMapValues>({
-        disabledDates: null,
-        allowedDates: null,
-        highlightedDates: null,
-    });
 
     const { setMenuFocused, setShiftKey } = useState();
     const { clearArrowNav } = useArrowNavigation();
-    const { validateDate, isValidTime, defaults, mapDatesArrToMap } = useUtils(props);
+    const { mapDatesArrToMap, validateDate, isValidTime } = useValidation(props);
+    const { defaultedTransitions, defaultedTextInput, defaultedInline, defaultedConfig } = useDefaults(props);
+    const { menuTransition, showTransition } = useTransitions(defaultedTransitions);
 
     onMounted(() => {
         parseExternalModelValue(props.modelValue);
-        if (!props.inline) {
-            const el = getScrollableParent(pickerWrapperRef.value);
-            el.addEventListener('scroll', onScroll);
+        nextTick().then(() => {
+            if (!defaultedInline.value.enabled) {
+                const el = getScrollableParent(pickerWrapperRef.value);
+                el.addEventListener('scroll', onScroll);
 
-            window.addEventListener('resize', onResize);
-        }
+                window.addEventListener('resize', onResize);
+            }
+        });
 
-        if (props.inline) {
+        if (defaultedInline.value.enabled) {
             isOpen.value = true;
         }
-        mapDatesArrToMap(arrMapValues);
     });
 
+    const arrMapValues = computed(() => mapDatesArrToMap());
+
     onUnmounted(() => {
-        if (!props.inline) {
+        if (!defaultedInline.value.enabled) {
             const el = getScrollableParent(pickerWrapperRef.value);
             if (el) {
                 el.removeEventListener('scroll', onScroll);
@@ -162,7 +180,7 @@
         }
     });
 
-    const slotList = mapSlots(slots, 'all', props.presetRanges);
+    const slotList = mapSlots(slots, 'all', props.presetDates);
     const inputSlots = mapSlots(slots, 'input');
 
     watch(
@@ -173,8 +191,16 @@
         { deep: true },
     );
 
-    const { openOnTop, menuStyle, resetPosition, setMenuPosition, setInitialPosition, getScrollableParent } =
-        usePosition(dpMenuRef, inputRef, emit, props);
+    const { openOnTop, menuStyle, xCorrect, setMenuPosition, getScrollableParent, shadowRender } = usePosition({
+        menuRef: dpWrapMenuRef,
+        menuRefInner: dpMenuRef,
+        inputRef,
+        pickerWrapperRef,
+        inline: defaultedInline,
+        emit,
+        props,
+        slots,
+    });
 
     const {
         inputValue,
@@ -190,8 +216,8 @@
             dp__main: true,
             dp__theme_dark: props.dark,
             dp__theme_light: !props.dark,
-            dp__flex_display: props.inline,
-            dp__flex_display_with_input: props.inlineWithInput,
+            dp__flex_display: defaultedInline.value.enabled,
+            dp__flex_display_with_input: defaultedInline.value.input,
         }),
     );
 
@@ -200,7 +226,7 @@
         if (props.teleport) {
             return {
                 to: typeof props.teleport === 'boolean' ? 'body' : props.teleport,
-                disabled: props.inline,
+                disabled: defaultedInline.value.enabled,
             };
         }
         return { class: 'dp__outer_menu_wrap' };
@@ -212,7 +238,7 @@
      */
     const onScroll = (): void => {
         if (isOpen.value) {
-            if (props.closeOnScroll) {
+            if (defaultedConfig.value.closeOnScroll) {
                 closeMenu();
             } else {
                 setMenuPosition();
@@ -230,19 +256,11 @@
         }
     };
 
-    const openMenu = async () => {
+    const openMenu = () => {
         if (!props.disabled && !props.readonly) {
-            resetPosition();
-            await nextTick();
+            shadowRender(DatepickerMenu, props);
+            setMenuPosition(false);
             isOpen.value = true;
-            await nextTick();
-            setInitialPosition();
-            await nextTick();
-            setMenuPosition();
-            delete menuStyle.value.opacity;
-            if (!defaults.value.transitions?.menuAppear) {
-                dpMenuRef.value?.$el?.classList.add('dp__menu_transitioned');
-            }
 
             if (isOpen.value) {
                 emit('open');
@@ -263,9 +281,11 @@
     const clearValue = (): void => {
         inputValue.value = '';
         clearInternalValues();
+        inputRef.value?.setParsedDate(null);
         emit('update:model-value', null);
+        emit('update:model-timezone-value', null);
         emit('cleared');
-        if (props.closeOnClearValue) {
+        if (defaultedConfig.value.closeOnClearValue) {
             closeMenu();
         }
     };
@@ -278,7 +298,8 @@
             if (date.length === 2 && validateDate(date[0]) && validateDate(date[1])) {
                 return true;
             }
-            return validateDate(date[0]);
+            if (props.partialRange && !props.timePicker) return validateDate(date[0]);
+            return false;
         }
         return false;
     };
@@ -298,13 +319,13 @@
     const emitOnAutoApply = (ignoreClose: boolean): void => {
         updateTextInputWithDateTimeValue();
         emitModelValue();
-        if (props.closeOnAutoApply && !ignoreClose) {
+        if (defaultedConfig.value.closeOnAutoApply && !ignoreClose) {
             closeMenu();
         }
     };
 
     const updateTextInputWithDateTimeValue = () => {
-        if (inputRef.value && props.textInput) {
+        if (inputRef.value && defaultedTextInput.value.enabled) {
             inputRef.value.setParsedDate(internalModelValue.value);
         }
     };
@@ -335,7 +356,7 @@
      * update, just clears internal data
      */
     const clearInternalValues = (): void => {
-        if (!props.textInput) {
+        if (!defaultedTextInput.value.enabled) {
             internalModelValue.value = null;
         }
     };
@@ -344,19 +365,20 @@
      * Closes the menu and clears the internal data
      */
     const closeMenu = (): void => {
-        if (!props.inline) {
+        if (!defaultedInline.value.enabled) {
             if (isOpen.value) {
                 isOpen.value = false;
+                xCorrect.value = false;
                 setMenuFocused(false);
                 setShiftKey(false);
                 clearArrowNav();
                 emit('closed');
-                setInitialPosition();
                 if (inputValue.value) {
                     parseExternalModelValue(modelValueRef.value);
                 }
             }
             clearInternalValues();
+            emit('blur');
         }
     };
 
@@ -365,10 +387,14 @@
             internalModelValue.value = null;
             return;
         }
-        internalModelValue.value = date;
-        if (submit) {
-            selectDate();
-            emit('text-submit');
+        const validDate = Array.isArray(date) ? !date.some((d) => !validateDate(d)) : validateDate(date);
+        const validTime = isValidTime(date);
+        if (validDate && validTime) {
+            internalModelValue.value = date;
+            if (submit) {
+                selectDate();
+                emit('text-submit');
+            }
         }
     };
 
@@ -389,7 +415,7 @@
     };
 
     const handleInputFocus = () => {
-        if (props.textInput) {
+        if (defaultedTextInput.value.enabled) {
             isInputFocused.value = true;
             formatInputValue();
         }
@@ -398,7 +424,7 @@
     };
 
     const handleBlur = () => {
-        if (props.textInput) {
+        if (defaultedTextInput.value.enabled) {
             isInputFocused.value = false;
             parseExternalModelValue(props.modelValue);
         }
@@ -415,18 +441,19 @@
     };
 
     const parseModel = (value?: ModelValue) => {
-        parseExternalModelValue(value || props.modelValue);
+        parseExternalModelValue(value ?? props.modelValue);
     };
 
     const switchView = (view: MenuView, instance?: number) => {
         dpMenuRef.value?.switchView(view, instance);
     };
 
-    onClickOutside(
-        dpMenuRef,
-        inputRef,
-        props.onClickOutside ? () => props.onClickOutside(validateBeforeEmit) : closeMenu,
-    );
+    const clickOutside = (validateBeforeEmit: () => boolean) => {
+        if (defaultedConfig.value.onClickOutside) return defaultedConfig.value.onClickOutside(validateBeforeEmit);
+        return closeMenu();
+    };
+
+    onClickOutside(dpWrapMenuRef, inputRef, () => clickOutside(validateBeforeEmit));
 
     defineExpose({
         closeMenu,

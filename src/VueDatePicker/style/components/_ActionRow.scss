@@ -2,11 +2,10 @@
   display: flex;
   align-items: center;
   width: 100%;
-  padding: var(--dp-common-padding);
+  padding: var(--dp-action-row-padding);
   box-sizing: border-box;
   color: var(--dp-text-color);
   flex-flow: row nowrap;
-
 
   svg {
     height: var(--dp-button-icon-height);
@@ -28,18 +27,22 @@
   flex: 0;
   align-items: center;
   justify-content: flex-end;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .dp__action_button {
+  display: inline-flex;
+  align-items: center;
   background: transparent;
   border: 1px solid transparent;
   padding: var(--dp-action-buttons-padding);
-  line-height: initial;
-  margin-left: 3px;
+  line-height: var(--dp-action-button-height);
+  margin-inline-start: 3px;
   height: var(--dp-action-button-height);
   cursor: pointer;
   border-radius: var(--dp-border-radius);
+  font-size: var(--dp-preview-font-size);
+  font-family: var(--dp-font-family);
 }
 
 .dp__action_select {

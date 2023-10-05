@@ -11,6 +11,7 @@ import type { Locale } from 'date-fns';
 
 export type EmitEvents =
     | 'update:model-value'
+    | 'update:model-timezone-value'
     | 'text-submit'
     | 'closed'
     | 'cleared'
@@ -52,15 +53,39 @@ export type ModelValue =
     | { month: number | string; year: number | string }[]
     | null;
 
+export interface DatePickerMarker {
+    date: Date | string;
+    type?: 'dot' | 'line';
+    tooltip?: { text?: string; html?: string; color?: string }[];
+    color?: string;
+}
+
+export interface DisabledTime {
+    hours: number | string;
+    minutes: number | string;
+    seconds?: number | string;
+}
+
+export interface CalendarWeek {
+    days: CalendarDay[];
+}
+export interface CalendarDay {
+    text: number | string;
+    value: Date;
+    current: boolean;
+    classData: Record<string, boolean>;
+    marker?: DatePickerMarker;
+}
+
+export type DpOptionEnabled = boolean | number | string;
+
 export interface VueDatePickerProps {
     uid?: string;
     name?: string;
     is24?: boolean;
     enableTimePicker?: boolean;
     range?: boolean;
-    multiCalendars?: boolean | number | string;
-    multiCalendarsSolo?: boolean;
-    multiStatic?: boolean;
+    multiCalendars?: DpOptionEnabled | Partial<{ static: boolean; solo: boolean; count: number | string }>;
     modelValue?: ModelValue;
     locale?: string;
     position?: 'left' | 'center' | 'right';
@@ -81,32 +106,8 @@ export interface VueDatePickerProps {
     disabled?: boolean;
     readonly?: boolean;
     required?: boolean;
-    format?:
-        | string
-        | ((
-              date:
-                  | Date
-                  | Date[]
-                  | TimeModel
-                  | TimeModel[]
-                  | {
-                        month: number | string;
-                        year: number | string;
-                    },
-          ) => string);
-    previewFormat?:
-        | string
-        | ((
-              date:
-                  | Date
-                  | Date[]
-                  | TimeModel
-                  | TimeModel[]
-                  | {
-                        month: number | string;
-                        year: number | string;
-                    },
-          ) => string);
+    format?: string | ((date: Date) => string) | ((dates: Date[]) => string);
+    previewFormat?: string | ((date: Date) => string) | ((dates: Date[]) => string);
     inputClassName?: string;
     menuClassName?: string;
     calendarClassName?: string;
@@ -114,7 +115,6 @@ export interface VueDatePickerProps {
     hideInputIcon?: boolean;
     state?: boolean;
     clearable?: boolean;
-    closeOnScroll?: boolean;
     autoApply?: boolean;
     filters?: {
         months?: number[];
@@ -124,23 +124,23 @@ export interface VueDatePickerProps {
     disableMonthYearSelect?: boolean;
     yearRange?: number[];
     disabledDates?: Date[] | string[] | ((date: Date) => boolean);
-    inline?: boolean;
-    inlineWithInput?: boolean;
+    inline?: boolean | { input?: boolean };
     selectText?: string;
     cancelText?: string;
     weekNumName?: string;
     autoPosition?: boolean;
     monthPicker?: boolean;
     timePicker?: boolean;
-    closeOnAutoApply?: boolean;
-    textInput?: boolean;
-    textInputOptions?: {
-        enterSubmit?: boolean;
-        tabSubmit?: boolean;
-        openMenu?: boolean;
-        rangeSeparator?: string;
-        format?: string | string[] | ((value: string) => Date | null);
-    };
+    textInput?:
+        | boolean
+        | {
+              enterSubmit?: boolean;
+              tabSubmit?: boolean;
+              openMenu?: boolean;
+              rangeSeparator?: string;
+              selectOnFocus?: boolean;
+              format?: string | string[] | ((value: string) => Date | null);
+          };
     monthNameFormat?: 'long' | 'short';
     startDate?: string | Date;
     startTime?: PartialTimeObj | PartialTimeObj[];
@@ -153,16 +153,10 @@ export interface VueDatePickerProps {
     altPosition?: (el: HTMLElement | undefined) => { top: number | string; left: number | string; transform?: string };
     disabledWeekDays?: number[] | string[];
     allowedDates?: string[] | Date[];
-    showNowButton?: boolean;
     nowButtonLabel?: string;
     partialRange?: boolean;
     monthChangeOnScroll?: boolean | 'inverse';
-    markers?: {
-        date: Date | string;
-        type?: 'dot' | 'line';
-        tooltip?: { text?: string; html?: string; color?: string }[];
-        color?: string;
-    }[];
+    markers?: DatePickerMarker[];
     transitions?:
         | boolean
         | {
@@ -174,7 +168,6 @@ export interface VueDatePickerProps {
               vNext?: string;
               vPrevious?: string;
           };
-    modeHeight?: string | number;
     enableSeconds?: boolean;
     escClose?: boolean;
     spaceConfirm?: boolean;
@@ -182,7 +175,13 @@ export interface VueDatePickerProps {
     formatLocale?: Locale;
     autocomplete?: string;
     multiDates?: boolean;
-    presetRanges?: { label: string; range: Date[] | string[]; style?: Record<string, string>; slot?: string }[];
+    presetDates?: {
+        label: string;
+        value: Date[] | string[] | string | Date;
+        style?: Record<string, string>;
+        slot?: string;
+        noTz?: boolean;
+    }[];
     flow?: ('month' | 'year' | 'calendar' | 'time' | 'minutes' | 'hours' | 'seconds')[];
     partialFlow?: boolean;
     preventMinMaxNavigation?: boolean;
@@ -193,9 +192,7 @@ export interface VueDatePickerProps {
     utc?: boolean | 'preserve';
     multiDatesLimit?: number | string;
     reverseYears?: boolean;
-    keepActionRow?: boolean;
     weekPicker?: boolean;
-    noSwipe?: boolean;
     vertical?: boolean;
     ariaLabels?: {
         toggleOverlay?: string;
@@ -213,6 +210,8 @@ export interface VueDatePickerProps {
         openMonthsOverlay?: string;
         nextMonth?: string;
         prevMonth?: string;
+        nextYear?: string;
+        prevYear?: string;
         day?: ({ value }: { value: Date }) => string;
     };
     arrowNavigation?: boolean;
@@ -230,16 +229,31 @@ export interface VueDatePickerProps {
     ignoreTimeValidation?: boolean;
     dayClass?: (date: Date) => string;
     hideNavigation?: ('month' | 'year' | 'calendar' | 'time' | 'minutes' | 'hours' | 'seconds')[];
-    onClickOutside?: (validate: () => boolean) => void;
     noDisabledRange?: boolean;
     sixWeeks?: boolean | 'append' | 'prepend' | 'center' | 'fair';
     timezone?: string;
-    allowPreventDefault?: boolean;
+    emitTimezone?: string;
     disableYearSelect?: boolean;
-    closeOnClearValue?: boolean;
     focusStartDate?: boolean;
-    disabledTimes?: (time: TimeObj | TimeObj[] | (TimeObj | undefined)[]) => boolean;
+    disabledTimes?:
+        | ((time: TimeObj | TimeObj[] | (TimeObj | undefined)[]) => boolean)
+        | DisabledTime[]
+        | [DisabledTime[], DisabledTime[]];
     showLastInRange?: boolean;
+    timePickerInline?: boolean;
+    calendar?: (weeks: CalendarWeek[]) => CalendarWeek[];
+    config?: {
+        allowStopPropagation?: boolean;
+        closeOnScroll?: boolean;
+        modeHeight?: number;
+        allowPreventDefault?: boolean;
+        closeOnClearValue?: boolean;
+        closeOnAutoApply?: boolean;
+        noSwipe?: boolean;
+        keepActionRow?: boolean;
+        onClickOutside?: (validate: () => boolean) => void;
+    };
+    quarterPicker?: boolean;
 }
 
 export type DatePickerInstance = ComponentPublicInstance<PublicMethods> | null;
@@ -250,7 +264,7 @@ export interface PublicMethods extends MethodOptions {
     openMenu: () => void;
     clearValue: () => void;
     onScroll: () => void;
-    updateInternalModelValue: (value: Date | Date[]) => void;
+    updateInternalModelValue: (value: Date | Date[] | null) => void;
     setMonthYear: (value: { month?: number | string; year?: number | string }) => void;
     parseModel: (value?: ModelValue) => void;
     switchView: (view: MenuView, instance?: number) => void;
